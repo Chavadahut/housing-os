@@ -1,36 +1,18 @@
 from connectors.san_diego_gis import get_parcel_data
+from connectors.san_diego_zoning import get_zoning_data
 
 
 def lookup_property(address: str):
 
-    parcel_data = get_parcel_data(address)
+    property_data = get_parcel_data(address)
 
-    return {
-        "address": parcel_data["address"],
+    for parcel in property_data["parcels"]:
 
-        # Parcel information
-        "apn": parcel_data["apn"],
-        "parcel_number": parcel_data["apn"],
+        zoning = get_zoning_data(
+            latitude=parcel["latitude"],
+            longitude=parcel["longitude"],
+        )
 
-        # Ownership
-        "owner": parcel_data["owner"],
+        parcel["zoning"] = zoning
 
-        # Physical characteristics
-        "lot_size_sqft": parcel_data["lot_size_sqft"],
-        "acreage": None,
-
-        # Location
-        "latitude": parcel_data["latitude"],
-        "longitude": parcel_data["longitude"],
-
-        # Planning information
-        "jurisdiction": "San Diego County",
-        "zoning": None,
-        "allowed_uses": [],
-
-        # AI notes
-        "development_notes": None,
-
-        # Data source
-        "source": parcel_data["source"]
-    }
+    return property_data
