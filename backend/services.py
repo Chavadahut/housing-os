@@ -1,22 +1,27 @@
+from connectors.san_diego_gis import get_parcel_data
+
+
 def lookup_property(address: str):
 
+    parcel_data = get_parcel_data(address)
+
     return {
-        "address": address,
+        "address": parcel_data["address"],
 
         # Parcel information
-        "apn": None,
-        "parcel_number": None,
+        "apn": parcel_data["apn"],
+        "parcel_number": parcel_data["apn"],
 
         # Ownership
-        "owner": None,
+        "owner": parcel_data["owner"],
 
         # Physical characteristics
-        "lot_size_sqft": None,
+        "lot_size_sqft": parcel_data["lot_size_sqft"],
         "acreage": None,
 
         # Location
-        "latitude": None,
-        "longitude": None,
+        "latitude": parcel_data["latitude"],
+        "longitude": parcel_data["longitude"],
 
         # Planning information
         "jurisdiction": "San Diego County",
@@ -27,5 +32,5 @@ def lookup_property(address: str):
         "development_notes": None,
 
         # Data source
-        "source": "placeholder"
+        "source": parcel_data["source"]
     }
