@@ -1,10 +1,21 @@
 import requests
 
 
+SAN_DIEGO_GIS_URL = "https://gis-public.sandiegocounty.gov/arcgis/rest/services"
+
+
 def get_parcel_data(address: str):
 
-    # Placeholder for San Diego County GIS connection
-    # We will connect the official parcel service here
+    params = {
+        "address": address
+    }
+
+    # Temporary test connection
+    response = requests.get(
+        SAN_DIEGO_GIS_URL,
+        params=params,
+        timeout=10
+    )
 
     return {
         "address": address,
