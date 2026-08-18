@@ -1,0 +1,26 @@
+# Python runtime artifacts
+**/__pycache__/
+**/*.py[cod]
+backend/venv/
+
+# Frontend dependencies and builds
+frontend/node_modules/
+frontend/dist/
+
+# Local property caches and backups
+backend/*.db
+backend/*.db-*
+
+# Generated validation and diagnostic output
+backend/*_results.json
+backend/*_diagnostic.json
+backend/*_discovery.json
+backend/output.txt
+
+# One-off local investigation scripts
+backend/diagnose_*.py
+backend/inspect_*.py
+backend/fix_*.py
+
+# Empty experimental package scaffold
+backend/app/
