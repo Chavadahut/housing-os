@@ -1113,6 +1113,27 @@ function DueDiligencePanel({ parcel }) {
   );
 }
 
+function DueDiligenceOverview({ parcel }) {
+  const utilities = parcel?.utilities || {};
+  const items = [
+    ["Fire hazard", parcel?.fire_hazard?.risk_level || parcel?.fire_hazard?.hazard_class, parcel?.fire_hazard?.development_warning],
+    ["Flood hazard", parcel?.flood_hazard?.special_flood_hazard_area === true ? "Special flood hazard area" : parcel?.flood_hazard?.risk_level || "No mapped SFHA flag", parcel?.flood_hazard?.development_warning],
+    ["Terrain", formatStatus(parcel?.terrain?.terrain_class), parcel?.terrain?.estimated_slope_percent != null ? `${parcel.terrain.estimated_slope_percent}% highest sampled local slope` : null],
+    ["Habitat", formatStatus(parcel?.habitat?.constraint_level), parcel?.habitat?.development_warning],
+    ["Wetlands", formatStatus(parcel?.wetlands?.constraint_level), parcel?.wetlands?.development_warning],
+    ["Water", utilities.water_district || "Service not confirmed", utilities.water_screening],
+    ["Wastewater", utilities.sanitation_district || "Sewer not confirmed", utilities.septic_screening || utilities.sewer_screening],
+    ["Road access", parcel?.road_access?.legal_access_confirmed ? "Legal access confirmed" : "Legal access not confirmed", parcel?.road_access?.development_warning],
+  ];
+  return (
+    <section className="stage-content-panel">
+      <div><p className="eyebrow">Stage 2</p><h2>Property due diligence</h2><p>Review environmental, infrastructure, access, title, and public-record risks before relying on the site for design or acquisition.</p></div>
+      <div className="due-diligence-grid">{items.map(([label, value, detail]) => <article key={label}><span>{label}</span><strong>{value || "Not available"}</strong>{detail && <small>{detail}</small>}</article>)}</div>
+      {(parcel?.feasibility_summary?.missing_information || []).length > 0 && <div className="due-diligence-followup"><h3>Information still needed</h3><ul>{parcel.feasibility_summary.missing_information.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+    </section>
+  );
+}
+
 function createInitialSectionStatus() {
   return [...CORE_SECTIONS, ...SECONDARY_SECTIONS].reduce(
     (status, section) => {
@@ -1165,6 +1186,7 @@ function App() {
   const [canvasObjects, setCanvasObjects] = useState([]);
   const [activeCanvasTool, setActiveCanvasTool] = useState("");
   const [pendingCanvasPoint, setPendingCanvasPoint] = useState(null);
+  const [activeStage, setActiveStage] = useState("evaluation");
   const [sectionStatus, setSectionStatus] = useState(
     createInitialSectionStatus
   );
@@ -1351,6 +1373,7 @@ function App() {
     setCanvasObjects([]);
     setActiveCanvasTool("");
     setPendingCanvasPoint(null);
+    setActiveStage("evaluation");
     setResult(null);
     setSelectedParcelIndex(0);
     setSectionStatus(createInitialSectionStatus());
@@ -1565,9 +1588,11 @@ function App() {
             <select
               id="parcel"
               value={selectedParcelIndex}
-              onChange={(event) =>
-                setSelectedParcelIndex(Number(event.target.value))
-              }
+              onChange={(event) => {
+                setSelectedParcelIndex(Number(event.target.value));
+                setActiveStage("evaluation");
+                setConceptDraft(null);
+              }}
             >
               {result.parcels.map((item, index) => (
                 <option key={`${item.apn}-${index}`} value={index}>
@@ -1581,7 +1606,17 @@ function App() {
 
       {parcel ? (
         <>
-          <section className="summary-grid">
+          <nav className="result-stages" aria-label="Property development stages">
+            {[
+              ["evaluation", "1", "Site Evaluation"],
+              ["due_diligence", "2", "Due Diligence"],
+              ["concept", "3", "Site Concept"],
+            ].map(([stage, number, label]) => <button key={stage} type="button" className={activeStage === stage ? "result-stage result-stage-active" : "result-stage"} onClick={() => { setActiveStage(stage); setActiveCanvasTool(""); }}><span>{number}</span><strong>{label}</strong></button>)}
+          </nav>
+
+          {activeStage === "concept" && <SiteConceptTransition key={parcel.apn || selectedParcelIndex} parcel={parcel} onConceptChange={startConcept} />}
+
+          {activeStage === "evaluation" && <section className="summary-grid">
             <DataCard
               label="Parcel"
               value={parcel.apn}
@@ -1684,13 +1719,13 @@ function App() {
                   : "Updates after all screening datasets finish"
               }
             />
-          </section>
+          </section>}
 
-          <section className="map-layout">
+          {(activeStage === "evaluation" || activeStage === "concept") && <section className="map-layout">
             <aside className="layer-panel">
               <h2>Map layers</h2>
 
-              {conceptDraft && (
+              {activeStage === "concept" && conceptDraft && (
                 <div className="canvas-toolbar">
                   <h3>Edit concept</h3>
                   <p>Drag numbered building handles, or select a tool and click the map.</p>
@@ -1713,7 +1748,7 @@ function App() {
                 ["samples", "Terrain samples"],
                 ["frontage", "Probable frontage"],
                 ["rear", "Probable rear edge"],
-                ...(conceptDraft?.apn === parcel.apn ? [["concept", "Site concept"]] : []),
+                ...(activeStage === "concept" && conceptDraft?.apn === parcel.apn ? [["concept", "Site concept"]] : []),
               ].map(([key, label]) => (
                 <label className="layer-toggle" key={key}>
                   <input
@@ -1758,22 +1793,22 @@ function App() {
             <PropertyMap
               parcel={parcel}
               layerVisibility={layerVisibility}
-              conceptDraft={conceptDraft}
-              canvasObjects={canvasObjects}
-              activeCanvasTool={activeCanvasTool}
+              conceptDraft={activeStage === "concept" ? conceptDraft : null}
+              canvasObjects={activeStage === "concept" ? canvasObjects : []}
+              activeCanvasTool={activeStage === "concept" ? activeCanvasTool : ""}
               onCanvasClick={handleCanvasClick}
               onMoveUnit={moveConceptUnit}
             />
-          </section>
+          </section>}
 
-          {conceptDraft && (
+          {activeStage === "concept" && conceptDraft && (
             <section className="canvas-checks-panel">
               <div><p className="eyebrow">Live concept checks</p><h2>Interactive canvas review</h2><p>Checks update as buildings and site objects change. They remain preliminary screening results.</p></div>
               <div className="canvas-check-grid">{canvasChecks.map(([label, status, detail, action]) => <article key={label} className={`canvas-check canvas-check-${status}`}><span>{status === "pass" ? "✓" : status === "conflict" ? "×" : "!"}</span><div><strong>{label}</strong><small>{detail}</small>{status !== "pass" && <small className="canvas-check-action"><b>Next action:</b> {action}</small>}</div></article>)}</div>
             </section>
           )}
 
-          {conceptPathway && (
+          {activeStage === "concept" && conceptPathway && (
             <section className="concept-pathway-update">
               <div className="concept-pathway-heading"><div><p className="eyebrow">Development Pathway update</p><h2>{conceptPathway.units}-unit concept pathway</h2><p>This pathway responds to the active concept and updates when units, ownership, access, parking, or mapped conflicts change.</p></div><div className={`complexity complexity-${conceptPathway.complexity.toLowerCase()}`}><span>Approval complexity</span><strong>{conceptPathway.complexity}</strong></div></div>
               <div className="concept-pathway-metrics"><div><span>Likely entitlement</span><strong>{conceptPathway.entitlements.join(" + ")}</strong></div><div><span>Preconstruction timeline</span><strong>{conceptPathway.timeline}</strong></div><div><span>Pathway confidence</span><strong>{conceptPathway.confidence}%</strong></div><div><span>Current mapped conflicts</span><strong>{conceptPathway.conflictCount}</strong></div></div>
@@ -1782,7 +1817,7 @@ function App() {
             </section>
           )}
 
-          {parcel.feasibility_summary && (
+          {activeStage === "evaluation" && parcel.feasibility_summary && (
             <section className="details-panel">
               <div>
                 <h2>Screening conclusion</h2>
@@ -1815,7 +1850,7 @@ function App() {
             </section>
           )}
 
-          {parcel.development_pathway && (
+          {activeStage === "due_diligence" && parcel.development_pathway && (
             <section className="pathway-panel">
               <div className="pathway-heading">
                 <div>
@@ -1866,11 +1901,10 @@ function App() {
             </section>
           )}
 
-          <SiteConceptTransition key={parcel.apn || selectedParcelIndex} parcel={parcel} onConceptChange={startConcept} />
+          {activeStage === "due_diligence" && <><DueDiligenceOverview parcel={parcel} />{parcel.permit_history && <DueDiligencePanel parcel={parcel} />}</>}
 
-          {parcel.permit_history && (
-            <DueDiligencePanel parcel={parcel} />
-          )}
+          {activeStage === "evaluation" && <section className="stage-transition"><div><span>Next stage</span><h2>Review the property’s due diligence</h2><p>Move from preliminary site evaluation into environmental, access, utility, easement, permit, and title screening.</p></div><button type="button" onClick={() => { setActiveStage("due_diligence"); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Continue to Due Diligence →</button></section>}
+          {activeStage === "due_diligence" && <section className="stage-transition"><button type="button" className="stage-back" onClick={() => setActiveStage("evaluation")}>← Back to Site Evaluation</button><div><span>Next stage</span><h2>Turn the screening into a site concept</h2><p>Carry this property record and its known constraints into the conceptual planning workspace.</p></div><button type="button" onClick={() => { setActiveStage("concept"); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Continue to Site Concept →</button></section>}
         </>
       ) : (
         <section className="empty-state">
