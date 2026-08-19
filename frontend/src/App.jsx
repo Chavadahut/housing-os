@@ -1721,7 +1721,7 @@ function App() {
             />
           </section>}
 
-          {(activeStage === "evaluation" || activeStage === "concept") && <section className="map-layout">
+          {activeStage === "concept" && <section className="map-layout">
             <aside className="layer-panel">
               <h2>Map layers</h2>
 
