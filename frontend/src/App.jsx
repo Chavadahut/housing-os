@@ -420,17 +420,63 @@ function buildCanvasChecks(parcel, draft, objects) {
   const coverage = lotSquareFeet
     ? Math.round(((draft.points.length * (Number(draft.settings?.homeSize) || 0) / (Number(draft.settings?.stories) || 1)) / lotSquareFeet) * 1000) / 10
     : null;
+  const densityMaximum = parcel?.development_pathway?.concept_eligibility?.screened_max_units
+    || parcel?.development_scenario?.density?.preliminary_max_units
+    || parcel?.feasibility_summary?.preliminary_unit_estimate;
+  const environmentalCautions = draft.assessment?.cautions.filter((item) => /habitat|wetland/i.test(item)) || [];
+  const highFire = /high|very high|severe/i.test(`${parcel?.fire_hazard?.risk_level || ""} ${parcel?.fire_hazard?.hazard_class || ""}`);
   return [
-    ["Setback fit", draft.assessment?.conflicts.some((item) => item.includes("envelope")) ? "conflict" : "pass", draft.assessment?.conflicts.find((item) => item.includes("envelope")) || "Footprints remain inside the preliminary envelope"],
-    ["Building overlap", overlaps ? "conflict" : "pass", overlaps ? "Two or more conceptual footprints overlap" : "No building overlap identified"],
-    ["Road access", draft.access?.frontageFound ? "pass" : "review", draft.access?.frontageFound ? "Concept connects to probable frontage" : "No frontage connection available"],
-    ["Fire access", "review", "Conceptual width and fire-apparatus turnaround still require agency criteria"],
-    ["Parking", parkingCount >= parkingRequired ? "pass" : "review", `${parkingCount} of ${parkingRequired} conceptual spaces placed`],
-    ["Slope exposure", draft.assessment?.slopeConflict ? "conflict" : "pass", draft.assessment?.slopeConflict ? "Footprint overlaps a mapped steep-slope zone" : "No mapped steep-slope overlap identified"],
-    ["Habitat / wetlands", draft.assessment?.cautions.some((item) => /habitat|wetland/i.test(item)) ? "review" : "pass", draft.assessment?.cautions.filter((item) => /habitat|wetland/i.test(item)).join("; ") || "No parcel-level habitat or wetland caution identified"],
-    ["Lot coverage", coverage === null ? "review" : "pass", coverage === null ? "Lot area unavailable" : `Approximate conceptual building coverage: ${coverage}%`],
-    ["Density", draft.points.length <= (parcel?.development_pathway?.concept_eligibility?.screened_max_units || draft.points.length) ? "pass" : "conflict", `${draft.points.length} conceptual units`],
+    ["Setback fit", draft.assessment?.conflicts.some((item) => item.includes("envelope")) ? "conflict" : "pass", draft.assessment?.conflicts.find((item) => item.includes("envelope")) || "Every building corner remains inside the preliminary setback envelope.", "Move the numbered building handle inward, reduce the building size, add stories, or rotate the footprint."],
+    ["Building overlap", overlaps ? "conflict" : "pass", overlaps ? "Two or more conceptual building footprints intersect." : "No building-to-building overlap was identified.", "Drag the numbered building handles apart or reduce their ground-floor footprints."],
+    ["Road access", draft.access?.frontageFound ? "pass" : "review", draft.access?.frontageFound ? `All ${draft.points.length} building placement${draft.points.length === 1 ? " connects" : "s connect"} to the likely frontage edge.` : "The concept has no route to a likely frontage edge.", "Use Draw driveway to connect the concept to frontage, then confirm legal access and driveway approval."],
+    ["Fire access", highFire ? "review" : "review", highFire ? "The parcel has a high fire-hazard screen; driveway width, grade, gates, and turnaround are not yet dimensioned." : "Fire-apparatus width and turnaround criteria are not yet dimensioned.", "Confirm fire-code access width, maximum grade, turnaround geometry, water supply, and secondary-access triggers with the fire authority."],
+    ["Parking", parkingCount >= parkingRequired ? "pass" : "review", `${parkingCount} of ${parkingRequired} conceptual parking spaces have been placed; ${Math.max(0, parkingRequired - parkingCount)} remain.`, `Use Add parking to place ${Math.max(0, parkingRequired - parkingCount)} additional space${Math.max(0, parkingRequired - parkingCount) === 1 ? "" : "s"}, or revise the parking-per-unit assumption.`],
+    ["Slope exposure", draft.assessment?.slopeConflict ? "conflict" : "pass", draft.assessment?.slopeConflict ? "At least one building footprint overlaps a mapped steep-slope zone." : "No building footprint overlaps a mapped steep-slope zone.", "Move affected buildings toward flatter slope zones or request grading and geotechnical review."],
+    ["Habitat / wetlands", environmentalCautions.length ? "review" : "pass", environmentalCautions.join("; ") || "No parcel-level habitat or wetland caution was identified.", "Keep disturbance outside mapped indicators where possible and obtain biological review or a professional wetland delineation before relying on the layout."],
+    ["Lot coverage", coverage === null ? "review" : "pass", coverage === null ? "Parcel area is unavailable, so conceptual lot coverage cannot be calculated." : `The buildings cover approximately ${coverage}% of parcel area before parking, roads, and other paving.`, "Confirm the zoning coverage definition and add impervious areas before treating this as a code-compliance check."],
+    ["Density", densityMaximum && draft.points.length > densityMaximum ? "conflict" : "pass", densityMaximum ? `${draft.points.length} conceptual units compared with a preliminary screen of ${densityMaximum}.` : `${draft.points.length} conceptual units; no verified density cap is available.`, densityMaximum ? `Remove units until the concept is at or below ${densityMaximum}, or pursue a separate density/entitlement analysis.` : "Confirm allowable density with the jurisdiction before relying on the unit count."],
   ];
+}
+
+function buildConceptPathway(parcel, draft, objects, checks) {
+  if (!draft) return null;
+  const units = draft.points.length;
+  const separateLots = draft.settings?.ownership === "separate_lots" || objects.some((object) => object.properties?.kind === "lot_line");
+  const highFire = /high|very high|severe/i.test(`${parcel?.fire_hazard?.risk_level || ""} ${parcel?.fire_hazard?.hazard_class || ""}`);
+  const environmental = draft.assessment?.cautions.some((item) => /habitat|wetland|flood/i.test(item));
+  const sewerAssumed = draft.settings?.wastewater === "sewer";
+  const sewerConfirmed = parcel?.utilities?.inside_sanitation_district === true;
+  const longDriveway = Math.max(0, ...(draft.access?.lengths || [0])) > 300;
+  const conflictCount = checks.filter(([, status]) => status === "conflict").length;
+  const entitlements = ["Site Plan Review"];
+  if (separateLots || units > 1 && draft.option?.id === "lot_subdivision") entitlements.unshift(units <= 4 ? "Minor Subdivision" : "Tentative Subdivision Map");
+  else if (units > 1) entitlements.unshift("Multi-unit Residential Review");
+  if (parcel?.zoning?.special_regulations) entitlements.push("Overlay / Specific Plan Consistency Review");
+  if (draft.option?.id === "assumed_residential") entitlements.unshift("Residential Use / Zoning Confirmation");
+
+  const studies = ["Boundary and topographic survey", "Preliminary grading and drainage study", "Geotechnical investigation"];
+  if (highFire || longDriveway) studies.push("Fire protection and access plan");
+  if (environmental) studies.push("Biological resources and wetland constraints review");
+  if (!sewerConfirmed || !sewerAssumed) studies.push("Sewer availability or onsite wastewater feasibility");
+  if (separateLots) studies.push("Tentative parcel or subdivision mapping");
+
+  const infrastructure = [
+    draft.access?.frontageFound ? "Conceptual frontage connection shown" : "Frontage connection unresolved",
+    sewerAssumed ? (sewerConfirmed ? "Sewer district identified; capacity and connection remain unconfirmed" : "Sewer assumed without confirmed district connection") : "Onsite wastewater feasibility assumed",
+    parcel?.utilities?.water_district ? `${parcel.utilities.water_district} identified; will-serve status unconfirmed` : "Water service source unconfirmed",
+    `${draft.settings?.parkingPerUnit || 0} parking spaces assumed per unit`,
+  ];
+  const score = conflictCount * 3 + (units > 1 ? 1 : 0) + (separateLots ? 2 : 0) + (highFire ? 2 : 0) + (environmental ? 2 : 0) + (!sewerConfirmed ? 1 : 0) + (longDriveway ? 1 : 0);
+  const complexity = score >= 7 ? "HIGH" : score >= 3 ? "MODERATE" : "LOW";
+  const timeline = complexity === "HIGH" ? "18–30 months" : complexity === "MODERATE" ? "12–18 months" : "6–12 months";
+  const known = [parcel?.zoning?.status === "found", Boolean(parcel?.map_geometry?.setback_envelope), Boolean(parcel?.map_geometry?.frontage_edge), parcel?.terrain?.status === "found", Boolean(parcel?.utilities?.water_district), sewerConfirmed, parcel?.road_access?.legal_access_confirmed === true];
+  const confidence = Math.min(95, Math.round(45 + (known.filter(Boolean).length / known.length) * 45 - conflictCount * 5));
+  const team = ["Land-use planner", "Civil engineer", "Surveyor", "Geotechnical consultant"];
+  if (highFire || longDriveway) team.push("Fire protection consultant");
+  if (environmental) team.push("Biologist / wetland specialist");
+  if (!sewerConfirmed) team.push("Utility or onsite wastewater specialist");
+  if (separateLots) team.push("Subdivision mapper / title specialist");
+  return { units, entitlements, studies: [...new Set(studies)], infrastructure, complexity, timeline, confidence: Math.max(20, confidence), team: [...new Set(team)], conflictCount };
 }
 
 function canvasObjectStyle(feature) {
@@ -1460,6 +1506,7 @@ function App() {
     (section) => sectionStatus[section] === "loading"
   );
   const canvasChecks = buildCanvasChecks(parcel, conceptDraft, canvasObjects);
+  const conceptPathway = buildConceptPathway(parcel, conceptDraft, canvasObjects, canvasChecks);
 
   return (
     <main className="app-shell">
@@ -1722,7 +1769,16 @@ function App() {
           {conceptDraft && (
             <section className="canvas-checks-panel">
               <div><p className="eyebrow">Live concept checks</p><h2>Interactive canvas review</h2><p>Checks update as buildings and site objects change. They remain preliminary screening results.</p></div>
-              <div className="canvas-check-grid">{canvasChecks.map(([label, status, detail]) => <article key={label} className={`canvas-check canvas-check-${status}`}><span>{status === "pass" ? "✓" : status === "conflict" ? "×" : "!"}</span><div><strong>{label}</strong><small>{detail}</small></div></article>)}</div>
+              <div className="canvas-check-grid">{canvasChecks.map(([label, status, detail, action]) => <article key={label} className={`canvas-check canvas-check-${status}`}><span>{status === "pass" ? "✓" : status === "conflict" ? "×" : "!"}</span><div><strong>{label}</strong><small>{detail}</small>{status !== "pass" && <small className="canvas-check-action"><b>Next action:</b> {action}</small>}</div></article>)}</div>
+            </section>
+          )}
+
+          {conceptPathway && (
+            <section className="concept-pathway-update">
+              <div className="concept-pathway-heading"><div><p className="eyebrow">Development Pathway update</p><h2>{conceptPathway.units}-unit concept pathway</h2><p>This pathway responds to the active concept and updates when units, ownership, access, parking, or mapped conflicts change.</p></div><div className={`complexity complexity-${conceptPathway.complexity.toLowerCase()}`}><span>Approval complexity</span><strong>{conceptPathway.complexity}</strong></div></div>
+              <div className="concept-pathway-metrics"><div><span>Likely entitlement</span><strong>{conceptPathway.entitlements.join(" + ")}</strong></div><div><span>Preconstruction timeline</span><strong>{conceptPathway.timeline}</strong></div><div><span>Pathway confidence</span><strong>{conceptPathway.confidence}%</strong></div><div><span>Current mapped conflicts</span><strong>{conceptPathway.conflictCount}</strong></div></div>
+              <div className="concept-pathway-columns"><article><h3>Studies and planning</h3><ul>{conceptPathway.studies.map((item) => <li key={item}>{item}</li>)}</ul></article><article><h3>Infrastructure assumptions</h3><ul>{conceptPathway.infrastructure.map((item) => <li key={item}>{item}</li>)}</ul></article><article><h3>Likely professional team</h3><ul>{conceptPathway.team.map((item) => <li key={item}>{item}</li>)}</ul></article></div>
+              <p className="pathway-disclaimer">Concept-responsive preliminary guidance only. Changes to the layout can change the entitlement pathway, required studies, cost, and schedule; agency confirmation remains required.</p>
             </section>
           )}
 
